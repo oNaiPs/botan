@@ -43,15 +43,6 @@ BigInt::BigInt(Sign s, size_t size)
    }
 
 /*
-* Copy constructor
-*/
-BigInt::BigInt(const BigInt& other)
-   {
-   m_reg = other.m_reg;
-   m_signedness = other.m_signedness;
-   }
-
-/*
 * Construct a BigInt from a string
 */
 BigInt::BigInt(const std::string& str)
@@ -158,6 +149,16 @@ void BigInt::encode_words(word out[], size_t size) const
    copy_mem(out, data(), words);
    }
 
+size_t BigInt::calc_sig_words() const
+   {
+   const word* x = m_reg.data();
+   size_t sig = m_reg.size();
+
+   while(sig && (x[sig-1] == 0))
+      sig--;
+   return sig;
+   }
+
 /*
 * Return bits {offset...offset+length}
 */
@@ -204,6 +205,7 @@ void BigInt::set_bit(size_t n)
    const word mask = static_cast<word>(1) << (n % BOTAN_MP_WORD_BITS);
    if(which >= size()) grow_to(which + 1);
    m_reg[which] |= mask;
+   this->invalidate_sig_words();
    }
 
 /*
@@ -215,6 +217,7 @@ void BigInt::clear_bit(size_t n)
    const word mask = static_cast<word>(1) << (n % BOTAN_MP_WORD_BITS);
    if(which < size())
       m_reg[which] &= ~mask;
+   this->invalidate_sig_words();
    }
 
 size_t BigInt::bytes() const
@@ -285,8 +288,9 @@ void BigInt::reduce_below(const BigInt& p, secure_vector<word>& ws)
       if(borrow)
          break;
 
-      m_reg.swap(ws);
+      swap_reg(ws);
       }
+   this->invalidate_sig_words();
    }
 
 /*
@@ -339,6 +343,8 @@ void BigInt::binary_decode(const uint8_t buf[], size_t length)
 
    for(size_t i = 0; i != length % WORD_BYTES; ++i)
       m_reg[length / WORD_BYTES] = (m_reg[length / WORD_BYTES] << 8) | buf[i];
+
+   this->invalidate_sig_words();
    }
 
 #if defined(BOTAN_HAS_VALGRIND)

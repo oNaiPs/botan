@@ -38,7 +38,7 @@ BigInt& BigInt::add(const word y[], size_t y_sw, Sign y_sign)
          }
       else if(relative_size == 0)
          {
-         zeroise(m_reg);
+         this->clear();
          set_sign(Positive);
          }
       else if(relative_size > 0)
@@ -188,7 +188,7 @@ BigInt& BigInt::rev_sub(const word y[], size_t y_sw, secure_vector<word>& ws)
       bigint_sub3(ws.data(), y, y_sw, this->data(), x_sw);
       }
 
-   m_reg.swap(ws);
+   this->swap_reg(ws);
 
    return (*this);
    }
@@ -234,7 +234,7 @@ BigInt& BigInt::mul(const BigInt& y, secure_vector<word>& ws)
                  y.data(), y.size(), y_sw,
                  ws.data(), ws.size());
 
-      z_reg.swap(m_reg);
+      this->swap_reg(z_reg);
       }
 
    return (*this);
@@ -308,6 +308,7 @@ word BigInt::operator%=(word mod)
        clear();
        grow_to(2);
        m_reg[0] = result;
+       m_sig_words = (result == 0) ? 0 : 1;
        return result;
        }
 
@@ -322,6 +323,8 @@ word BigInt::operator%=(word mod)
       m_reg[0] = mod - remainder;
    else
       m_reg[0] = remainder;
+
+   m_sig_words = (m_reg[0] == 0) ? 0 : 1;
 
    set_sign(BigInt::Positive);
 

@@ -59,7 +59,7 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      * Copy Constructor
      * @param other the BigInt to copy
      */
-     BigInt(const BigInt& other);
+     BigInt(const BigInt& other) = default;
 
      /**
      * Create BigInt from a string. If the string starts with 0x the
@@ -150,12 +150,14 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      void swap(BigInt& other)
         {
         m_reg.swap(other.m_reg);
+        std::swap(m_sig_words, other.m_sig_words);
         std::swap(m_signedness, other.m_signedness);
         }
 
      void swap_reg(secure_vector<word>& reg)
         {
         m_reg.swap(reg);
+        invalidate_sig_words();
         }
 
      /**
@@ -309,7 +311,7 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      * Zeroize the BigInt. The size of the underlying register is not
      * modified.
      */
-     void clear() { zeroise(m_reg); }
+     void clear() { zeroise(m_reg); m_sig_words = 0; }
 
      /**
      * Compare this to another BigInt
@@ -510,12 +512,11 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      */
      size_t sig_words() const
         {
-        const word* x = m_reg.data();
-        size_t sig = m_reg.size();
-
-        while(sig && (x[sig-1] == 0))
-           sig--;
-        return sig;
+        if(m_sig_words == sig_words_npos)
+           m_sig_words = calc_sig_words();
+        BOTAN_DEBUG_ASSERT(m_sig_words == calc_sig_words());
+        //BOTAN_ASSERT_NOMSG(m_sig_words == calc_sig_words());
+        return m_sig_words;
         }
 
      /**
@@ -534,7 +535,7 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      * Return a mutable pointer to the register
      * @result a pointer to the start of the internal register
      */
-     word* mutable_data() { return m_reg.data(); }
+     word* mutable_data() { invalidate_sig_words(); return m_reg.data(); }
 
      /**
      * Return a const pointer to the register
@@ -542,7 +543,7 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
      */
      const word* data() const { return m_reg.data(); }
 
-     secure_vector<word>& get_word_vector() { return m_reg; }
+     secure_vector<word>& get_word_vector() { invalidate_sig_words(); return m_reg; }
      const secure_vector<word>& get_word_vector() const { return m_reg; }
 
      /**
@@ -727,7 +728,18 @@ class BOTAN_PUBLIC_API(2,0) BigInt final
         size_t idx);
 
    private:
+
+      static const size_t sig_words_npos = static_cast<size_t>(-1);
+
+      void invalidate_sig_words() const
+         {
+         m_sig_words = sig_words_npos;
+         }
+
+      size_t calc_sig_words() const;
+
       secure_vector<word> m_reg;
+      mutable size_t m_sig_words = sig_words_npos;
       Sign m_signedness = Positive;
    };
 
