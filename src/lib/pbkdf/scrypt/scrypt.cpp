@@ -89,7 +89,7 @@ void Scrypt_Params::derive_key(
 std::string Scrypt_Params::to_string() const
    {
    std::ostringstream oss;
-   oss << "N=" << m_N << ",r=" << m_r << ",p=" << m_p << "\n";
+   oss << "N=" << m_N << ",r=" << m_r << ",p=" << m_p;
    return oss.str();
    }
 
@@ -120,23 +120,27 @@ Scrypt_Params::Scrypt_Params(uint32_t msec)
    * stime(N,r,8*p) / stime(N,r,8*p) is ~ 7
    * stime(2*N,r,p) / stime(N,r,p) is ~ 2
    *
-   * Compute stime(8192,1,1) as baseline.
-   * If msec <= that, just return (8192,1,1)
+   * Compute stime(16384,1,1) as baseline.
+   * If msec <= that, just return (16384,1,1)
    */
 
+   const size_t trials = 8;
+
    // Starting parameters
-   m_N = 8192;
+   m_N = 16384;
    m_r = 1;
    m_p = 1;
 
    const uint64_t scrypt_start = OS::get_system_timestamp_ns();
 
    uint8_t output[32] = { 0 };
-   scrypt(output, sizeof(output), "", 0, nullptr, 0, *this);
+   for(size_t i = 0; i != trials; ++i)
+      scrypt(output, sizeof(output), "test", 4, nullptr, 0, *this);
+
    const uint64_t scrypt_end = OS::get_system_timestamp_ns();
 
-   // nsec for scrypt(8192,1,1)
-   const uint64_t measured_time = scrypt_end - scrypt_start;
+   // nsec for scrypt(16384,1,1)
+   const uint64_t measured_time = (scrypt_end - scrypt_start) / trials;
 
    const double target_nsec = msec * 1000000.0;
 
@@ -145,8 +149,6 @@ Scrypt_Params::Scrypt_Params(uint32_t msec)
 
    while(est_nsec < target_nsec)
       {
-      turn = (turn + 1) % 3;
-
       const double range = target_nsec / est_nsec;
 
       if(range < 2)
@@ -154,21 +156,20 @@ Scrypt_Params::Scrypt_Params(uint32_t msec)
          break;
          }
 
-      if(turn == 0 && range > 2)
+      if(range > 32)
          {
-         m_N *= 2;
-         est_nsec *= 2;
+         m_p *= 8;
+         est_nsec *= 6;
          }
-      else if(turn == 1 && range > 4)
+
+      if(range > 8)
          {
-         m_r *= 4;
-         est_nsec *= 3.5;
+         m_r *= 8;
+         est_nsec *= 6;
          }
-      else if(turn == 2 && range > 4)
-         {
-         m_p *= 4;
-         est_nsec *= 3.5;
-         }
+
+      m_N *= 2;
+      est_nsec *= 2;
       }
    }
 
