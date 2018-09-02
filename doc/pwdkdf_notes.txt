@@ -1,0 +1,288 @@
+
+/*
+The solution to all PBKDF problems: params are all in a constructor String?
+
+"PGP-S2K(SHA-384, 0..255 or 1024+)"
+"PBKDF2(SHA-256, 100000)"
+"PBKDF2(SHA-256, 1)" // for scrypt!
+"PBKDF2(SHA-256, 300ms)" ???
+"SCrypt(1024,8,1)"
+Argon2i(...)
+Argon2d(...)
+Argon2id(...)
+*/
+
+class PasswordBasedKeyDerivation
+   {
+   public:
+
+      static std::unique_ptr<PasswordBasedKeyDerivation> create(const std::string& spec);
+      static std::unique_ptr<PasswordBasedKeyDerivation> create_or_throw(const std::string& spec);
+
+      class Params
+         {
+         public:
+            virtual ~Params() = default;
+            virtual std::string to_string() const = 0;
+
+            /**
+            * Produce output using some set of parameters created with parse_params
+            * or tune_params_for_msec
+            *
+            * Throws if this scheme for whatever reason cannot produce an
+            * output of output_len
+            */
+            virtual void derive_key(uint8_t output[], size_t output_len,
+                                    const char* password, size_t password_len,
+                                    const uint8_t salt[], size_t salt_len) = 0;
+         };
+
+      virtual ~PasswordBasedKeyDerivation() = default;
+
+      virtual std::string name() const = 0;
+
+      /**
+      * Parse parameters from a string in a scheme specific way.
+      */
+      virtual std::unique_ptr<Params> parse_params(const std::string& s) = 0;
+
+      /**
+      * @param msec the number of milliseconds to try for
+      * This may be derived by running a short benchmark, or by a hardcoded
+      * selection, depending on the algorithm.
+      */
+      virtual std::unique_ptr<Params> tune_params_for_msec(size_t output_len, uint32_t msec) = 0;
+
+   };
+
+class Scrypt_PwdKDF : public PasswordBasedKeyDerivation
+   {
+   public:
+
+      std::string name() const override
+         {
+         return "Scrypt";
+         }
+
+      class Scrypt_Params : public PasswordBasedKeyDerivation::Params
+         {
+         public:
+            Scrypt_Params(size_t N, size_t r, size_t p) : m_N(N), m_r(r), m_p(p)
+               {
+               // Upper bounds here are much lower than scrypt maximums yet seem sufficient
+               BOTAN_ARG_CHECK(p <= 128, "Invalid scrypt p");
+               BOTAN_ARG_CHECK(N <= 4194304 && is_power_of_2(N), "Invalid scrypt N");
+               BOTAN_ARG_CHECK(r <= 64, "Invalid scrypt r");
+               }
+
+            std::string to_string() const override;
+
+            void derive_key(uint8_t output[], size_t output_len,
+                            const char* password, size_t password_len,
+                            const uint8_t salt[], size_t salt_len) const override
+               {
+               scrypt(uint8_t output[], size_t output_len,
+                      std::string(password, password_len), // fixme
+                      const uint8_t salt[], size_t salt_len,
+                      this->N(), this->r(), this->p());
+               }
+
+            size_t N() const { return m_N; }
+            size_t r() const { return m_r; }
+            size_t p() const { return m_p; }
+         private:
+            size_t m_N;
+            size_t m_r;
+            size_t m_p;
+         };
+
+      static std::unique_ptr<Params> new_params(size_t N, size_t r, size_t p)
+         {
+         return std::unique_ptr<Params>(new Scrypt_Params(N, r, p));
+         }
+
+      std::unique_ptr<Params> parse_params(const std::string& params) override
+         {
+         auto kv = parse_params(params);
+
+         size_t N = kv.get_sz("N");
+         size_t r = kv.get_sz("r");
+         size_t p = kv.get_sz("p");
+
+         return std::unique_ptr<Params>(new Scrypt_Params(N, r, p));
+         }
+
+      std::unique_ptr<Params> tune_params_for_msec(size_t /*output_len*/, uint32_t msec) override
+         {
+         /*
+         * Some rough relations between scrypt parameters and runtime.
+         * Denote here by stime(N,r,p) the msec it takes to run scrypt.
+         *
+         * Emperically for smaller sizes:
+         * stime(N,8*r,p) / stime(N,r,p) is ~ 6-7
+         * stime(N,r,8*p) / stime(N,r,8*p) is ~ 7
+         * stime(2*N,r,p) / stime(N,r,p) is ~ 2
+         *
+         * Compute stime(8192,1,1) as baseline.
+         * If msec <= that, just return (8192,1,1)
+         */
+
+         // Starting parameters
+         size_t N = 8192, r = 1, p = 1;
+
+         const uint64_t scrypt_start = get_system_timestamp_ns();
+
+         uint8_t output[32] = { 0 };
+         scrypt(output, sizeof(output), "", nullptr, 0, N, r, p)
+         const uint64_t scrypt_end = get_system_timestamp_ns();
+
+         // nsec for scrypt(8192,1,1)
+         const uint64_t measured_time = scrypt_end - scrypt_start;
+
+         const double target_nsec = msec * 1000000.0;
+
+         double est_nsec = measured_time;
+         size_t turn = 0;
+
+         while(est_nsec < target_nsec)
+            {
+            turn = (turn + 1) % 3;
+
+            const double range = target_nsec / est_nsec;
+
+            if(range < 2)
+               {
+               break;
+               }
+
+            if(turn == 0 && range > 2)
+               {
+               N *= 2;
+               est_nsec *= 2;
+               }
+            else if(turn == 1 && range > 4)
+               {
+               r *= 4;
+               est_nsec *= 3.5;
+               }
+            else if(turn == 2 && range > 4)
+               {
+               p *= 4;
+               est_nsec *= 3.5;
+               }
+            }
+
+         return std::unique_ptr<Params>(new Scrypt_Params(N, r, p));
+         }
+   };
+
+class PBKDF2_PwdKDF : public PasswordBasedKeyDerivation
+   {
+   public:
+
+      class PBKDF2_Params : public PasswordBasedKeyDerivation::Params
+         {
+         public:
+            PBKDF2_Params(MessageAuthenticationCode& prf, size_t iter) :
+               m_prf(prf.clone()),
+               m_iter(iter)
+               {}
+
+            std::string to_string() const override;
+
+            void derive_key(uint8_t output[], size_t output_len,
+                            const char* password, size_t password_len,
+                            const uint8_t salt[], size_t salt_len) const override
+               {
+               // Need PRF!
+               pbkdf2(*m_prf.get(), output, output_len,
+                      passphrase, passphrase_len,
+                      salt, salt_len,
+                      this->iterations());
+               }
+
+            size_t iterations() const { return m_iter; }
+         private:
+            std::unique_ptr<MessageAuthenticationCode> m_prf;
+            size_t m_iter;
+         };
+
+      std::string name() const override
+         {
+         return "PBKDF2(" + m_prf->name() + ")";
+         }
+
+      std::unique_ptr<Params> parse_params(const std::string& params) override
+         {
+         auto kv = params_params(params);
+         size_t I = kv.get_sz("I");
+         return std::unique_ptr<Params>(new PBKDF2_Params(I));
+         }
+
+      std::unique_ptr<Params> tune_params_for_msec(size_t output_len, uint32_t msec) override
+         {
+         const size_t iterations = tune_pbkdf2(*m_prf.get(), output_len, std::chrono::milliseconds(msec));
+         return std::unique_ptr<Params>(new PBKDF2_Params(iterations));
+         }
+
+   private:
+      std::unique_ptr<MessageAuthenticationCode> m_prf;
+   };
+
+int main()
+   {
+   td::unique_ptr<PasswordBasedKeyDerivation> pbkdf =
+      Botan::PasswordBasedKeyDerivation::create_or_throw("PBKDF2(SHA-256");
+   std::unique_ptr<PasswordBasedKeyDerivation> scrypt =
+      Botan::PasswordBasedKeyDerivation::create_or_throw("Scrypt");
+
+   auto scrypt_params = scrypt->parse_params("N=1024,r=8,p=1");
+   assert(scrypt_params->to_string() == "N=1024,r=8,p=1");
+   auto scrypt_params_gen = scrypt->tune_params_for_msec(32, 300);
+   assert(scrypt_params_gen->to_string() == "N=16384,r=16,p=4");
+
+   auto pbkdf_params = pbkdf->parse_params("I=1");
+   auto pbkdf_params_gen = pbkdf->tune_params_for_msec(output_len, 100);
+   assert(pbkdf_params_gen->to_string() == "I=1000000");
+
+   pbkdf_params_gen->derive_key(output, output_len,
+                                password.data(), password.size(),
+                                salt, sizeof(salt));
+
+   }
+
+ffi
+
+typedef ... botan_pbkdf_params_struct* botan_pbkdf_params_t;
+
+botan_pbkdf_params_init(botan_pbkdf_params_t* pbkdf,
+                        const char* pbkdf_str,
+                        const char* pbkdf_param_str,
+                        size_t pbkdf_param1,
+                        size_t pbkdf_param2,
+                        size_t pbkdf_param3,
+                        size_t pbkdf_param4);
+
+int botan_pbkdf_params_tune(botan_pbkdf_params_t* pbkdf,
+                        const char* pbkdf_str,
+                        const char* pbkdf_param_str,
+                        uint32_t desired_msec);
+
+int botan_pbkdf_exec(botan_pbkdf_params_t pbkdf,
+    uint8_t output[], size_t output_len,
+   const char* password, size_t password_len);
+
+botan_pbkdf_params_init_pbkdf2(botan_pbkdf_params_t* pbkdf,
+                               const char* pbkdf2_hash,
+                               size_t iterations)
+                               {
+                               botan_pbkdf_params_init(pbkdf, "PBKDF2", pbkdf2_hash, iterations, 0, 0, 0);
+                               }
+
+botan_pbkdf_params_init_scrypt(botan_pbkdf_params_t* pbkdf,
+                               size_t N, size_t r, size_t p)
+                               {
+                               botan_pbkdf_params_init(pbkdf, "Scrypt", nullptr, N, r, p, 0);
+                               }
+
+botan_pbkdf_
