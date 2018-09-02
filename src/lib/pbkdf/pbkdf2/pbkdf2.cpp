@@ -1,6 +1,7 @@
 /*
 * PBKDF2
 * (C) 1999-2007 Jack Lloyd
+* (C) 2018 Ribose Inc
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
@@ -8,6 +9,7 @@
 #include <botan/pbkdf2.h>
 #include <botan/exceptn.h>
 #include <botan/internal/rounding.h>
+#include <botan/internal/os_utils.h>
 
 namespace Botan {
 
@@ -20,11 +22,6 @@ pbkdf2(MessageAuthenticationCode& prf,
        size_t iterations,
        std::chrono::milliseconds msec)
    {
-   clear_mem(out, out_len);
-
-   if(out_len == 0)
-      return 0;
-
    try
       {
       prf.set_key(cast_char_ptr_to_uint8(passphrase.data()), passphrase.size());
@@ -36,13 +33,68 @@ pbkdf2(MessageAuthenticationCode& prf,
                                std::to_string(passphrase.size()));
       }
 
+   if(iterations == 0)
+      {
+      iterations = tune_pbkdf2(prf, out_len, msec.count());
+      }
+
+   pbkdf2(prf, out, out_len, salt, salt_len, iterations);
+
+   return iterations;
+   }
+
+size_t tune_pbkdf2(MessageAuthenticationCode& prf,
+                   size_t output_length,
+                   uint32_t msec)
+   {
    const size_t prf_sz = prf.output_length();
+   BOTAN_ASSERT_NOMSG(prf_sz > 0);
    secure_vector<uint8_t> U(prf_sz);
 
-   const size_t blocks_needed = round_up(out_len, prf_sz) / prf_sz;
+   const size_t trial_iterations = 10000;
 
-   std::chrono::microseconds usec_per_block =
-      std::chrono::duration_cast<std::chrono::microseconds>(msec) / blocks_needed;
+   const size_t start_nsec = OS::get_system_timestamp_ns();
+
+   // Short output ensures we only need a single PBKDF2 block
+   uint8_t out[16] = { 0 };
+   uint8_t salt[16] = { 0 };
+   pbkdf2(prf, out, sizeof(out), salt, sizeof(salt), trial_iterations);
+
+   const uint64_t end_nsec = OS::get_system_timestamp_ns();
+
+   const uint64_t duration_nsec = end_nsec - start_nsec;
+
+   const uint64_t desired_nsec = msec * 1000000;
+
+   if(duration_nsec < desired_nsec)
+      return trial_iterations;
+
+   const size_t blocks_needed = (output_length + prf_sz - 1) / prf_sz;
+
+   const size_t multiplier = (desired_nsec / duration_nsec / blocks_needed);
+
+   if(multiplier == 0)
+      return trial_iterations;
+   else
+      return trial_iterations * multiplier;
+   }
+
+void pbkdf2(MessageAuthenticationCode& prf,
+            uint8_t out[],
+            size_t out_len,
+            const uint8_t salt[],
+            size_t salt_len,
+            size_t iterations)
+   {
+   clear_mem(out, out_len);
+
+   if(out_len == 0)
+      return;
+
+   const size_t prf_sz = prf.output_length();
+   BOTAN_ASSERT_NOMSG(prf_sz > 0);
+
+   secure_vector<uint8_t> U(prf_sz);
 
    uint32_t counter = 1;
    while(out_len)
@@ -55,53 +107,16 @@ pbkdf2(MessageAuthenticationCode& prf,
 
       xor_buf(out, U.data(), prf_output);
 
-      if(iterations == 0)
+      for(size_t i = 1; i != iterations; ++i)
          {
-         /*
-         If no iterations set, run the first block to calibrate based
-         on how long hashing takes on whatever machine we're running on.
-         */
-
-         const auto start = std::chrono::high_resolution_clock::now();
-
-         iterations = 1; // the first iteration we did above
-
-         while(true)
-            {
-            prf.update(U);
-            prf.final(U.data());
-            xor_buf(out, U.data(), prf_output);
-            iterations++;
-
-            /*
-            Only break on relatively 'even' iterations. For one it
-            avoids confusion, and likely some broken implementations
-            break on getting completely randomly distributed values
-            */
-            if(iterations % 10000 == 0)
-               {
-               auto time_taken = std::chrono::high_resolution_clock::now() - start;
-               auto usec_taken = std::chrono::duration_cast<std::chrono::microseconds>(time_taken);
-               if(usec_taken > usec_per_block)
-                  break;
-               }
-            }
-         }
-      else
-         {
-         for(size_t i = 1; i != iterations; ++i)
-            {
-            prf.update(U);
-            prf.final(U.data());
-            xor_buf(out, U.data(), prf_output);
-            }
+         prf.update(U);
+         prf.final(U.data());
+         xor_buf(out, U.data(), prf_output);
          }
 
       out_len -= prf_output;
       out += prf_output;
       }
-
-   return iterations;
    }
 
 size_t

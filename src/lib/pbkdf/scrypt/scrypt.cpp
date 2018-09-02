@@ -1,5 +1,6 @@
 /**
 * (C) 2018 Jack Lloyd
+* (C) 2018 Ribose Inc
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
@@ -8,7 +9,10 @@
 #include <botan/pbkdf2.h>
 #include <botan/salsa20.h>
 #include <botan/loadstor.h>
+#include <botan/exceptn.h>
 #include <botan/internal/bit_ops.h>
+#include <botan/internal/os_utils.h>
+#include <sstream>
 
 namespace Botan {
 
@@ -63,74 +67,109 @@ void scryptROMmix(size_t r, size_t N, uint8_t* B, secure_vector<uint8_t>& V)
 Scrypt_Params::Scrypt_Params(size_t N, size_t r, size_t p) :
    m_N(N), m_r(r), m_p(p)
    {
-   BOTAN_ARG_CHECK(p <= 128, "Invalid scrypt p");
-   BOTAN_ARG_CHECK(N <= 4194304 && is_power_of_2(N), "Invalid scrypt N");
-   BOTAN_ARG_CHECK(r <= 64, "Invalid scrypt r");
+   if(!is_power_of_2(N))
+      throw Invalid_Argument("Scrypt N parameter must be a power of 2");
+
+   if(p == 0 || p > 128)
+      throw Invalid_Argument("Invalid or unsupported scrypt p");
+   if(r == 0 || r > 64)
+      throw Invalid_Argument("Invalid or unsupported scrypt r");
+   if(N < 1 || N > 4194304)
+      throw Invalid_Argument("Invalid or unsupported scrypt N");
    }
 
-Scrypt_Params::Scrypt_Params(std::chrono::milliseconds msec)
+void Scrypt_Params::derive_key(
+   uint8_t out[], size_t out_len,
+   const char* passphrase, const size_t pass_len,
+   const uint8_t salt[], size_t salt_len) const
+   {
+   scrypt(out, out_len, passphrase, pass_len, salt, salt_len, *this);
+   }
+
+std::string Scrypt_Params::to_string() const
+   {
+   std::ostringstream oss;
+   oss << "N=" << m_N << ",r=" << m_r << ",p=" << m_p << "\n";
+   return oss.str();
+   }
+
+std::string Scrypt::name() const
+   {
+   return "Scrypt";
+   }
+
+std::unique_ptr<PasswordHash::Params> Scrypt::default_params() const
+   {
+   return std::unique_ptr<PasswordHash::Params>(new Scrypt_Params(32768, 8, 1));
+   }
+
+std::unique_ptr<PasswordHash::Params> Scrypt::tune(size_t output_length, uint32_t msec) const
+   {
+   BOTAN_UNUSED(output_length);
+   return std::unique_ptr<PasswordHash::Params>(new Scrypt_Params(msec));
+   }
+
+Scrypt_Params::Scrypt_Params(uint32_t msec)
    {
    /*
-   This mapping is highly subjective and machine specific
-   For simplicity we fix r=8 and p=4
+   * Some rough relations between scrypt parameters and runtime.
+   * Denote here by stime(N,r,p) the msec it takes to run scrypt.
+   *
+   * Emperically for smaller sizes:
+   * stime(N,8*r,p) / stime(N,r,p) is ~ 6-7
+   * stime(N,r,8*p) / stime(N,r,8*p) is ~ 7
+   * stime(2*N,r,p) / stime(N,r,p) is ~ 2
+   *
+   * Compute stime(8192,1,1) as baseline.
+   * If msec <= that, just return (8192,1,1)
    */
-   m_r = 8;
-   m_p = 4;
 
-   if(msec.count() <= 10)
-      {
-      m_N = 4096;
-      m_p = 1;
-      }
-   else if(msec.count() <= 50)
-      {
-      m_N = 8192;
-      }
-   else if(msec.count() <= 100)
-      {
-      m_N = 16384;
-      }
-   else if(msec.count() <= 500)
-      {
-      m_N = 32768;
-      }
-   else
-      {
-      m_N = 65536;
-      }
-   }
+   // Starting parameters
+   m_N = 8192;
+   m_r = 1;
+   m_p = 1;
 
-Scrypt_Params::Scrypt_Params(size_t iterations)
-   {
-   // This mapping is highly subjective and machine specific
-   m_r = 8;
-   m_p = 4;
+   const uint64_t scrypt_start = OS::get_system_timestamp_ns();
 
-   if(iterations < 1000)
-      {
-      m_N = 8192;
-      }
-   else if(iterations < 5000)
-      {
-      m_N = 16384;
-      }
-   else if(iterations < 10000)
-      {
-      m_N = 32768;
-      }
-   else
-      {
-      m_N = 65536;
-      }
-   }
+   uint8_t output[32] = { 0 };
+   scrypt(output, sizeof(output), "", 0, nullptr, 0, *this);
+   const uint64_t scrypt_end = OS::get_system_timestamp_ns();
 
-void scrypt(uint8_t output[], size_t output_len,
-            const std::string& password,
-            const uint8_t salt[], size_t salt_len,
-            const Scrypt_Params& params)
-   {
-   scrypt(output, output_len, password, salt, salt_len,
-          params.N(), params.r(), params.p());
+   // nsec for scrypt(8192,1,1)
+   const uint64_t measured_time = scrypt_end - scrypt_start;
+
+   const double target_nsec = msec * 1000000.0;
+
+   double est_nsec = measured_time;
+   size_t turn = 0;
+
+   while(est_nsec < target_nsec)
+      {
+      turn = (turn + 1) % 3;
+
+      const double range = target_nsec / est_nsec;
+
+      if(range < 2)
+         {
+         break;
+         }
+
+      if(turn == 0 && range > 2)
+         {
+         m_N *= 2;
+         est_nsec *= 2;
+         }
+      else if(turn == 1 && range > 4)
+         {
+         m_r *= 4;
+         est_nsec *= 3.5;
+         }
+      else if(turn == 2 && range > 4)
+         {
+         m_p *= 4;
+         est_nsec *= 3.5;
+         }
+      }
    }
 
 void scrypt(uint8_t output[], size_t output_len,
@@ -138,20 +177,41 @@ void scrypt(uint8_t output[], size_t output_len,
             const uint8_t salt[], size_t salt_len,
             size_t N, size_t r, size_t p)
    {
-   // Upper bounds here are much lower than scrypt maximums yet seem sufficient
-   BOTAN_ARG_CHECK(p <= 128, "Invalid scrypt p");
-   BOTAN_ARG_CHECK(N <= 4194304 && is_power_of_2(N), "Invalid scrypt N");
-   BOTAN_ARG_CHECK(r <= 64, "Invalid scrypt r");
+   Scrypt_Params params(N, r, p);
+
+   scrypt(output, output_len,
+          password.c_str(), password.size(),
+          salt, salt_len,
+          params);
+   }
+
+void scrypt(uint8_t output[], size_t output_len,
+            const char* password, size_t password_len,
+            const uint8_t salt[], size_t salt_len,
+            const Scrypt_Params& params)
+   {
+   const size_t N = params.N();
+   const size_t r = params.r();
+   const size_t p = params.p();
 
    const size_t S = 128 * r;
    secure_vector<uint8_t> B(p * S);
 
-   PKCS5_PBKDF2 pbkdf2(MessageAuthenticationCode::create_or_throw("HMAC(SHA-256)").release());
+   auto hmac_sha256 = MessageAuthenticationCode::create_or_throw("HMAC(SHA-256)");
 
-   pbkdf2.pbkdf(B.data(), B.size(),
-                password,
-                salt, salt_len,
-                1, std::chrono::milliseconds(0));
+   try
+      {
+      hmac_sha256->set_key(cast_char_ptr_to_uint8(password), password_len);
+      }
+   catch(Invalid_Key_Length&)
+      {
+      throw Exception("Scrypt cannot accept passphrases of the provided length");
+      }
+
+   pbkdf2(*hmac_sha256.get(),
+          B.data(), B.size(),
+          salt, salt_len,
+          1);
 
    // temp space
    secure_vector<uint8_t> V((N+1) * S);
@@ -162,10 +222,10 @@ void scrypt(uint8_t output[], size_t output_len,
       scryptROMmix(r, N, &B[128*r*i], V);
       }
 
-   pbkdf2.pbkdf(output, output_len,
-                password,
-                B.data(), B.size(),
-                1, std::chrono::milliseconds(0));
+   pbkdf2(*hmac_sha256.get(),
+          output, output_len,
+          B.data(), B.size(),
+          1);
    }
 
 }

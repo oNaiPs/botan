@@ -1,6 +1,7 @@
 /*
 * PKCS #5 PBES2
 * (C) 1999-2008,2014 Jack Lloyd
+* (C) 2018 Ribose Inc
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
@@ -106,15 +107,24 @@ secure_vector<uint8_t> derive_key(const std::string& passphrase,
       {
 #if defined(BOTAN_HAS_SCRYPT)
 
-      Scrypt_Params params(32768, 8, 4);
+      Scrypt_Params params(32768, 8, 1);
 
       if(msec_in_iterations_out)
-         params = Scrypt_Params(std::chrono::milliseconds(*msec_in_iterations_out));
+         {
+         uint32_t msec = static_cast<uint32_t>(*msec_in_iterations_out);
+         params = Scrypt_Params(msec);
+         }
       else
-         params = Scrypt_Params(iterations_if_msec_null);
+         {
+         if(iterations_if_msec_null < 100000)
+            params = Scrypt_Params(32768, 8, 1);
+         else
+            params = Scrypt_Params(65536, 8, 1);
+         }
 
       secure_vector<uint8_t> key(key_length);
-      scrypt(key.data(), key.size(), passphrase,
+      scrypt(key.data(), key.size(),
+             passphrase.c_str(), passphrase.size(),
              salt.data(), salt.size(), params);
 
       std::vector<uint8_t> scrypt_params;

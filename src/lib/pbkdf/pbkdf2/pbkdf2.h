@@ -1,6 +1,7 @@
 /*
 * PBKDF2
 * (C) 1999-2007,2012 Jack Lloyd
+* (C) 2018 Ribose Inc
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
@@ -20,6 +21,23 @@ BOTAN_PUBLIC_API(2,0) size_t pbkdf2(MessageAuthenticationCode& prf,
                         const uint8_t salt[], size_t salt_len,
                         size_t iterations,
                         std::chrono::milliseconds msec);
+
+/**
+* Perform PBKDF2. The prf is assumed to be keyed already.
+*/
+BOTAN_PUBLIC_API(2,8) void pbkdf2(MessageAuthenticationCode& prf,
+                                  uint8_t out[], size_t out_len,
+                                  const uint8_t salt[], size_t salt_len,
+                                  size_t iterations);
+
+
+/**
+* Tune PBKDF2 iterations. Runs specified number of iterations to
+* estimate the speed of the PRF.
+*/
+BOTAN_PUBLIC_API(2,8) size_t tune_pbkdf2(MessageAuthenticationCode& prf,
+                                         size_t output_length,
+                                         uint32_t msec);
 
 /**
 * PKCS #5 PBKDF2
