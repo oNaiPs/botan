@@ -37,14 +37,14 @@ class PBKDF_Tune final : public Command
          const std::string algo = get_arg("algo");
          const bool check_time = flag_set("check");
 
-         std::unique_ptr<Botan::PasswordHash> pwdhash =
-            Botan::PasswordHash::create(algo);
+         std::unique_ptr<Botan::PasswordHashFamily> pwdhash_fam =
+            Botan::PasswordHashFamily::create(algo);
 
-         if(!pwdhash)
+         if(!pwdhash_fam)
             throw CLI_Error_Unsupported("Password hashing", algo);
 
-         std::unique_ptr<Botan::PasswordHash::Params> params =
-            pwdhash->tune(output_len, static_cast<uint32_t>(msec));
+         std::unique_ptr<Botan::PasswordHash> pwhash =
+            pwdhash_fam->tune(output_len, std::chrono::milliseconds(msec));
 
          if(check_time)
             {
@@ -52,17 +52,17 @@ class PBKDF_Tune final : public Command
             const uint8_t salt[8] = { 0 };
 
             const uint64_t start_ns = Botan::OS::get_system_timestamp_ns();
-            params->derive_key(outbuf.data(), outbuf.size(),
+            pwhash->derive_key(outbuf.data(), outbuf.size(),
                                "test", 4, salt, sizeof(salt));
             const uint64_t end_ns = Botan::OS::get_system_timestamp_ns();
 
             const uint64_t dur_ns = end_ns - start_ns;
 
-            output() << params->to_string() << " took " << (dur_ns / 1000000.0) << " msec to compute\n";
+            output() << pwhash->to_string() << " took " << (dur_ns / 1000000.0) << " msec to compute\n";
             }
          else
             {
-            output() << params->to_string() << "\n";
+            output() << pwhash->to_string() << "\n";
             }
          }
    };
