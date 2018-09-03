@@ -32,6 +32,11 @@ std::unique_ptr<PasswordHash> Scrypt_Family::tune(size_t output_length, std::chr
    return std::unique_ptr<PasswordHash>(new Scrypt(msec));
    }
 
+std::unique_ptr<PasswordHash> Scrypt_Family::from_configuration(size_t N, size_t r, size_t p, size_t, const char*) const
+   {
+   return std::unique_ptr<PasswordHash>(new Scrypt(N, r, p));
+   }
+
 namespace {
 
 void scryptBlockMix(size_t r, uint8_t* B, uint8_t* Y)

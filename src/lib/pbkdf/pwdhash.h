@@ -93,7 +93,18 @@ class BOTAN_PUBLIC_API(2,8) PasswordHashFamily
       */
       virtual std::unique_ptr<PasswordHash> default_params() const = 0;
 
-      // TODO from_configuration(const char* str, size_t i1, size_t i2, size_t i3, size_t i4); ?
+      /**
+      * Create a password hash using some scheme specific format.
+      * Eg PBKDF2 and PGP-S2K set iterations in i1
+      * Scrypt uses N,r,p in i{1-3}
+      * Values not needed should be set to 0 or null
+      */
+      virtual std::unique_ptr<PasswordHash> from_configuration(
+         size_t i1,
+         size_t i2 = 0,
+         size_t i3 = 0,
+         size_t i4 = 0,
+         const char* cfg_str = nullptr) const = 0;
    };
 
 }

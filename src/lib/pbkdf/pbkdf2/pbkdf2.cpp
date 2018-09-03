@@ -206,4 +206,9 @@ std::unique_ptr<PasswordHash> PBKDF2_Family::default_params() const
    return std::unique_ptr<PasswordHash>(new PBKDF2(*m_prf, 100000));
    }
 
+std::unique_ptr<PasswordHash> PBKDF2_Family::from_configuration(size_t iter, size_t, size_t, size_t, const char*) const
+   {
+   return std::unique_ptr<PasswordHash>(new PBKDF2(*m_prf, iter));
+   }
+
 }

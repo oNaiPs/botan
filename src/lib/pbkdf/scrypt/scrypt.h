@@ -58,6 +58,9 @@ class BOTAN_PUBLIC_API(2,8) Scrypt_Family final : public PasswordHashFamily
       std::unique_ptr<PasswordHash> tune(size_t output_length, std::chrono::milliseconds msec) const override;
 
       std::unique_ptr<PasswordHash> default_params() const override;
+
+      std::unique_ptr<PasswordHash> from_configuration(
+         size_t N, size_t r, size_t p, size_t, const char*) const override;
    };
 
 /**

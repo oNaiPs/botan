@@ -74,6 +74,9 @@ class BOTAN_PUBLIC_API(2,8) PBKDF2_Family final : public PasswordHashFamily
       * processing power and attacks improve.
       */
       std::unique_ptr<PasswordHash> default_params() const override;
+
+      std::unique_ptr<PasswordHash> from_configuration(
+         size_t iter, size_t, size_t, size_t, const char*) const override;
    private:
       std::unique_ptr<MessageAuthenticationCode> m_prf;
    };
