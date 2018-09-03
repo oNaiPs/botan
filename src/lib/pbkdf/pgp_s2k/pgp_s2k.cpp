@@ -185,7 +185,9 @@ RFC4880_S2K::RFC4880_S2K(HashFunction* hash, size_t iterations) :
    m_iterations(iterations < 256 ? RFC4880_decode_count(iterations) : iterations)
    {
    if(iterations < 256)
+      {
       m_iterations = RFC4880_decode_count(static_cast<uint8_t>(iterations));
+      }
    else
       {
       m_iterations = iterations;
