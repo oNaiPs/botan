@@ -52,13 +52,11 @@ SymmetricKey derive_key(const std::string& passphrase,
       if(salt.size() < 8)
          throw Decoding_Error("PBE-PKCS5 v2.0: Encoded salt is too small");
 
-      const std::string prf = OIDS::lookup(prf_algo.get_oid());
-
-      std::unique_ptr<PBKDF> pbkdf(get_pbkdf("PBKDF2(" + prf + ")"));
-
       if(key_length == 0)
          key_length = default_key_size;
 
+      const std::string prf = OIDS::lookup(prf_algo.get_oid());
+      std::unique_ptr<PBKDF> pbkdf(get_pbkdf("PBKDF2(" + prf + ")"));
       return pbkdf->pbkdf_iterations(key_length, passphrase, salt.data(), salt.size(), iterations);
       }
 #if defined(BOTAN_HAS_SCRYPT)
@@ -107,33 +105,29 @@ secure_vector<uint8_t> derive_key(const std::string& passphrase,
       {
 #if defined(BOTAN_HAS_SCRYPT)
 
-      Scrypt_Params params(32768, 8, 1);
+      Scrypt scrypt(32768, 8, 1);
 
       if(msec_in_iterations_out)
          {
-         uint32_t msec = static_cast<uint32_t>(*msec_in_iterations_out);
-         params = Scrypt_Params(msec);
+         scrypt = Scrypt(std::chrono::milliseconds(*msec_in_iterations_out));
          }
-      else
+      else if(iterations_if_msec_null > 100000)
          {
-         if(iterations_if_msec_null < 100000)
-            params = Scrypt_Params(32768, 8, 1);
-         else
-            params = Scrypt_Params(65536, 8, 1);
+         scrypt = Scrypt(65536, 8, 1);
          }
 
       secure_vector<uint8_t> key(key_length);
-      scrypt(key.data(), key.size(),
-             passphrase.c_str(), passphrase.size(),
-             salt.data(), salt.size(), params);
+      scrypt.derive_key(key.data(), key.size(),
+                        passphrase.c_str(), passphrase.size(),
+                        salt.data(), salt.size());
 
       std::vector<uint8_t> scrypt_params;
       DER_Encoder(scrypt_params)
          .start_cons(SEQUENCE)
             .encode(salt, OCTET_STRING)
-            .encode(params.N())
-            .encode(params.r())
-            .encode(params.p())
+            .encode(scrypt.N())
+            .encode(scrypt.r())
+            .encode(scrypt.p())
             .encode(key_length)
          .end_cons();
 
@@ -163,6 +157,8 @@ secure_vector<uint8_t> derive_key(const std::string& passphrase,
          {
          key = pbkdf->pbkdf_iterations(key_length, passphrase, salt.data(), salt.size(), iterations);
          }
+
+      //kdf_algo = pbkdf->create_algorithm_identifier(key_length, salt.data(), salt.size(), iterations);
 
       std::vector<uint8_t> pbkdf2_params;
 
