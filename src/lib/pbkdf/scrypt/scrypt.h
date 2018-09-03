@@ -12,20 +12,27 @@
 
 namespace Botan {
 
-class BOTAN_PUBLIC_API(2,8) Scrypt_Params : public PasswordHash::Params
+/**
+* Scrypt key derivation function (RFC 7914)
+*/
+class BOTAN_PUBLIC_API(2,8) Scrypt final : public PasswordHash
    {
    public:
-      Scrypt_Params(size_t N, size_t r, size_t p);
+      Scrypt(size_t N, size_t r, size_t p);
 
-      explicit Scrypt_Params(uint32_t msec);
+      /**
+      * Chose some N,r,p roughly suitable for taking msec time on this machine.
+      * However with scrypt the runtime can be hard to extrapolate
+      * from smaller tests and so derive_key may take much more or less time.
+      *
+      * For best results: instead of using this, on application initialization
+      * (or equivalent), time specific Scrypt parameters, pick closest to target
+      * and save that somewhere.
+      */
+      explicit Scrypt(std::chrono::milliseconds msec);
 
-      Scrypt_Params(const Scrypt_Params& other) = default;
-      Scrypt_Params& operator=(const Scrypt_Params&) = default;
-
-#if !defined(BOTAN_BUILD_COMPILER_IS_MSVC_2013)
-      Scrypt_Params(Scrypt_Params&& other) = default;
-      Scrypt_Params& operator=(Scrypt_Params&&) = default;
-#endif
+      Scrypt(const Scrypt& other) = default;
+      Scrypt& operator=(const Scrypt&) = default;
 
       /**
       * Derive a new key under the current Scrypt parameter set
@@ -43,17 +50,14 @@ class BOTAN_PUBLIC_API(2,8) Scrypt_Params : public PasswordHash::Params
       size_t m_N, m_r, m_p;
    };
 
-class BOTAN_PUBLIC_API(2,8) Scrypt final : public PasswordHash
+class BOTAN_PUBLIC_API(2,8) Scrypt_Family final : public PasswordHashFamily
    {
    public:
       std::string name() const override;
 
-      std::unique_ptr<Params> tune(size_t output_length, uint32_t msec) const override;
+      std::unique_ptr<PasswordHash> tune(size_t output_length, std::chrono::milliseconds msec) const override;
 
-      /**
-      * Currently returns (32768,8,1)
-      */
-      std::unique_ptr<Params> default_params() const override;
+      std::unique_ptr<PasswordHash> default_params() const override;
    };
 
 /**
@@ -72,13 +76,14 @@ class BOTAN_PUBLIC_API(2,8) Scrypt final : public PasswordHash
 *
 * Scrypt uses approximately (p + N + 1) * 128 * r bytes of memory
 */
-void BOTAN_UNSTABLE_API scrypt(uint8_t output[], size_t output_len,
-                               const char* password, size_t password_len,
-                               const uint8_t salt[], size_t salt_len,
-                               const Scrypt_Params& params);
+void BOTAN_PUBLIC_API(2,8) scrypt(uint8_t output[], size_t output_len,
+                                  const char* password, size_t password_len,
+                                  const uint8_t salt[], size_t salt_len,
+                                  size_t N, size_t r, size_t p);
 
 /**
 * Scrypt key derivation function (RFC 7914)
+* Before 2.8 this function was the primary interface for scrypt
 *
 * @param output the output will be placed here
 * @param output_len length of output
@@ -92,13 +97,17 @@ void BOTAN_UNSTABLE_API scrypt(uint8_t output[], size_t output_len,
 * Suitable parameters for most uses would be N = 32768, r = 8, p = 1
 *
 * Scrypt uses approximately (p + N + 1) * 128 * r bytes of memory
-*
-* Deprecated:
 */
-void BOTAN_UNSTABLE_API scrypt(uint8_t output[], size_t output_len,
-                               const std::string& password,
-                               const uint8_t salt[], size_t salt_len,
-                               size_t N, size_t r, size_t p);
+inline void scrypt(uint8_t output[], size_t output_len,
+                   const std::string& password,
+                   const uint8_t salt[], size_t salt_len,
+                   size_t N, size_t r, size_t p)
+   {
+   return scrypt(output, output_len,
+                 password.c_str(), password.size(),
+                 salt, salt_len,
+                 N, r, p);
+   }
 
 }
 

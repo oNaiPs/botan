@@ -16,6 +16,22 @@
 
 namespace Botan {
 
+std::string Scrypt_Family::name() const
+   {
+   return "Scrypt";
+   }
+
+std::unique_ptr<PasswordHash> Scrypt_Family::default_params() const
+   {
+   return std::unique_ptr<PasswordHash>(new Scrypt(32768, 8, 1));
+   }
+
+std::unique_ptr<PasswordHash> Scrypt_Family::tune(size_t output_length, std::chrono::milliseconds msec) const
+   {
+   BOTAN_UNUSED(output_length);
+   return std::unique_ptr<PasswordHash>(new Scrypt(msec));
+   }
+
 namespace {
 
 void scryptBlockMix(size_t r, uint8_t* B, uint8_t* Y)
@@ -64,7 +80,7 @@ void scryptROMmix(size_t r, size_t N, uint8_t* B, secure_vector<uint8_t>& V)
 
 }
 
-Scrypt_Params::Scrypt_Params(size_t N, size_t r, size_t p) :
+Scrypt::Scrypt(size_t N, size_t r, size_t p) :
    m_N(N), m_r(r), m_p(p)
    {
    if(!is_power_of_2(N))
@@ -78,38 +94,14 @@ Scrypt_Params::Scrypt_Params(size_t N, size_t r, size_t p) :
       throw Invalid_Argument("Invalid or unsupported scrypt N");
    }
 
-void Scrypt_Params::derive_key(
-   uint8_t out[], size_t out_len,
-   const char* passphrase, const size_t pass_len,
-   const uint8_t salt[], size_t salt_len) const
-   {
-   scrypt(out, out_len, passphrase, pass_len, salt, salt_len, *this);
-   }
-
-std::string Scrypt_Params::to_string() const
+std::string Scrypt::to_string() const
    {
    std::ostringstream oss;
-   oss << "N=" << m_N << ",r=" << m_r << ",p=" << m_p;
+   oss << "Scrypt(N=" << m_N << ",r=" << m_r << ",p=" << m_p << ")";
    return oss.str();
    }
 
-std::string Scrypt::name() const
-   {
-   return "Scrypt";
-   }
-
-std::unique_ptr<PasswordHash::Params> Scrypt::default_params() const
-   {
-   return std::unique_ptr<PasswordHash::Params>(new Scrypt_Params(32768, 8, 1));
-   }
-
-std::unique_ptr<PasswordHash::Params> Scrypt::tune(size_t output_length, uint32_t msec) const
-   {
-   BOTAN_UNUSED(output_length);
-   return std::unique_ptr<PasswordHash::Params>(new Scrypt_Params(msec));
-   }
-
-Scrypt_Params::Scrypt_Params(uint32_t msec)
+Scrypt::Scrypt(std::chrono::milliseconds msec)
    {
    /*
    * Some rough relations between scrypt parameters and runtime.
@@ -135,17 +127,18 @@ Scrypt_Params::Scrypt_Params(uint32_t msec)
 
    uint8_t output[32] = { 0 };
    for(size_t i = 0; i != trials; ++i)
-      scrypt(output, sizeof(output), "test", 4, nullptr, 0, *this);
+      {
+      scrypt(output, sizeof(output), "test", 4, nullptr, 0, m_N, m_r, m_p);
+      }
 
    const uint64_t scrypt_end = OS::get_system_timestamp_ns();
 
    // nsec for scrypt(16384,1,1)
    const uint64_t measured_time = (scrypt_end - scrypt_start) / trials;
 
-   const double target_nsec = msec * 1000000.0;
+   const double target_nsec = msec.count() * 1000000.0;
 
    double est_nsec = measured_time;
-   size_t turn = 0;
 
    while(est_nsec < target_nsec)
       {
@@ -173,30 +166,25 @@ Scrypt_Params::Scrypt_Params(uint32_t msec)
       }
    }
 
-void scrypt(uint8_t output[], size_t output_len,
-            const std::string& password,
-            const uint8_t salt[], size_t salt_len,
-            size_t N, size_t r, size_t p)
+void Scrypt::derive_key(uint8_t output[], size_t output_len,
+                        const char* password, size_t password_len,
+                        const uint8_t salt[], size_t salt_len) const
    {
-   Scrypt_Params params(N, r, p);
-
    scrypt(output, output_len,
-          password.c_str(), password.size(),
+          password, password_len,
           salt, salt_len,
-          params);
+          N(), r(), p());
    }
 
 void scrypt(uint8_t output[], size_t output_len,
             const char* password, size_t password_len,
             const uint8_t salt[], size_t salt_len,
-            const Scrypt_Params& params)
+            size_t N, size_t r, size_t p)
    {
-   const size_t N = params.N();
-   const size_t r = params.r();
-   const size_t p = params.p();
-
    const size_t S = 128 * r;
    secure_vector<uint8_t> B(p * S);
+   // temp space
+   secure_vector<uint8_t> V((N+1) * S);
 
    auto hmac_sha256 = MessageAuthenticationCode::create_or_throw("HMAC(SHA-256)");
 
@@ -213,9 +201,6 @@ void scrypt(uint8_t output[], size_t output_len,
           B.data(), B.size(),
           salt, salt_len,
           1);
-
-   // temp space
-   secure_vector<uint8_t> V((N+1) * S);
 
    // these can be parallel
    for(size_t i = 0; i != p; ++i)

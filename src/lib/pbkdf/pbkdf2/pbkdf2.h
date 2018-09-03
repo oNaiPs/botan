@@ -10,6 +10,7 @@
 #define BOTAN_PBKDF2_H_
 
 #include <botan/pbkdf.h>
+#include <botan/pwdhash.h>
 #include <botan/mac.h>
 
 namespace Botan {
@@ -30,30 +31,62 @@ BOTAN_PUBLIC_API(2,8) void pbkdf2(MessageAuthenticationCode& prf,
                                   const uint8_t salt[], size_t salt_len,
                                   size_t iterations);
 
-
 /**
-* Tune PBKDF2 iterations. Runs specified number of iterations to
-* estimate the speed of the PRF.
+* PBKDF2
 */
-BOTAN_PUBLIC_API(2,8) size_t tune_pbkdf2(MessageAuthenticationCode& prf,
-                                         size_t output_length,
-                                         uint32_t msec);
+class BOTAN_PUBLIC_API(2,8) PBKDF2 final : public PasswordHash
+   {
+   public:
+      PBKDF2(const MessageAuthenticationCode& prf, size_t iter) :
+         m_prf(prf.clone()),
+         m_iterations(iter)
+         {}
+
+      PBKDF2(const MessageAuthenticationCode& prf, size_t olen, std::chrono::milliseconds msec);
+
+      size_t iterations() const { return m_iterations; }
+
+      std::string to_string() const override;
+
+      void derive_key(uint8_t out[], size_t out_len,
+                      const char* password, const size_t password_len,
+                      const uint8_t salt[], size_t salt_len) const override;
+   private:
+      std::unique_ptr<MessageAuthenticationCode> m_prf;
+      size_t m_iterations;
+   };
 
 /**
 * PKCS #5 PBKDF2
 */
+class BOTAN_PUBLIC_API(2,8) PBKDF2_Family final : public PasswordHashFamily
+   {
+   public:
+      PBKDF2_Family(MessageAuthenticationCode* prf) : m_prf(prf) {}
+
+      std::string name() const override;
+
+      std::unique_ptr<PasswordHash> tune(size_t output_len, std::chrono::milliseconds msec) const override;
+
+      /**
+      * Return some default parameter set for this PBKDF that should be good
+      * enough for most users. The value returned may change over time as
+      * processing power and attacks improve.
+      */
+      std::unique_ptr<PasswordHash> default_params() const override;
+   private:
+      std::unique_ptr<MessageAuthenticationCode> m_prf;
+   };
+
+/**
+* PKCS #5 PBKDF2 (old interface)
+*/
 class BOTAN_PUBLIC_API(2,0) PKCS5_PBKDF2 final : public PBKDF
    {
    public:
-      std::string name() const override
-         {
-         return "PBKDF2(" + m_mac->name() + ")";
-         }
+      std::string name() const override;
 
-      PBKDF* clone() const override
-         {
-         return new PKCS5_PBKDF2(m_mac->clone());
-         }
+      PBKDF* clone() const override;
 
       size_t pbkdf(uint8_t output_buf[], size_t output_len,
                    const std::string& passphrase,
