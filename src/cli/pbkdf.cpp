@@ -18,7 +18,7 @@ namespace Botan_CLI {
 class PBKDF_Tune final : public Command
    {
    public:
-      PBKDF_Tune() : Command("pbkdf_tune --algo=Scrypt --output-len=32 --check msec") {}
+      PBKDF_Tune() : Command("pbkdf_tune --algo=Scrypt --output-len=32 --check *times") {}
 
       std::string group() const override
          {
@@ -32,7 +32,6 @@ class PBKDF_Tune final : public Command
 
       void go() override
          {
-         const size_t msec = get_arg_sz("msec");
          const size_t output_len = get_arg_sz("output-len");
          const std::string algo = get_arg("algo");
          const bool check_time = flag_set("check");
@@ -43,26 +42,46 @@ class PBKDF_Tune final : public Command
          if(!pwdhash_fam)
             throw CLI_Error_Unsupported("Password hashing", algo);
 
-         std::unique_ptr<Botan::PasswordHash> pwhash =
-            pwdhash_fam->tune(output_len, std::chrono::milliseconds(msec));
-
-         if(check_time)
+         for(const std::string& time : get_arg_list("times"))
             {
-            std::vector<uint8_t> outbuf(output_len);
-            const uint8_t salt[8] = { 0 };
+            std::unique_ptr<Botan::PasswordHash> pwhash;
 
-            const uint64_t start_ns = Botan::OS::get_system_timestamp_ns();
-            pwhash->derive_key(outbuf.data(), outbuf.size(),
-                               "test", 4, salt, sizeof(salt));
-            const uint64_t end_ns = Botan::OS::get_system_timestamp_ns();
+            if(time == "default")
+               {
+               pwhash = pwdhash_fam->default_params();
+               }
+            else
+               {
+               size_t msec = 0;
+               try
+                  {
+                  msec = std::stoul(time);
+                  }
+               catch(std::exception&)
+                  {
+                  throw CLI_Usage_Error("Unknown time value '" + time + "' for pbkdf_tune");
+                  }
 
-            const uint64_t dur_ns = end_ns - start_ns;
+               pwhash = pwdhash_fam->tune(output_len, std::chrono::milliseconds(msec));
+               }
 
-            output() << pwhash->to_string() << " took " << (dur_ns / 1000000.0) << " msec to compute\n";
-            }
-         else
-            {
-            output() << pwhash->to_string() << "\n";
+            output() << "For " << time << " selected " << pwhash->to_string();
+
+            if(check_time)
+               {
+               std::vector<uint8_t> outbuf(output_len);
+               const uint8_t salt[8] = { 0 };
+
+               const uint64_t start_ns = Botan::OS::get_system_timestamp_ns();
+               pwhash->derive_key(outbuf.data(), outbuf.size(),
+                                  "test", 4, salt, sizeof(salt));
+               const uint64_t end_ns = Botan::OS::get_system_timestamp_ns();
+               const uint64_t dur_ns = end_ns - start_ns;
+
+               output() << " took " << (dur_ns / 1000000.0) << " msec to compute";
+               }
+
+            output() << "\n";
             }
          }
    };

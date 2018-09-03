@@ -557,6 +557,7 @@ BOTAN_PUBLIC_API(2,8) int botan_scrypt(uint8_t out[], size_t out_len,
                                        const char* passphrase,
                                        const uint8_t salt[], size_t salt_len,
                                        size_t N, size_t r, size_t p);
+
 /**
 * Derive a key
 * @param kdf_algo KDF algorithm, e.g., "SP800-56C"

@@ -52,12 +52,12 @@ std::unique_ptr<PasswordHashFamily> PasswordHashFamily::create(const std::string
       }
 #endif
 
-#if defined(BOTAN_HAS_PGP_S2K) && 0
+#if defined(BOTAN_HAS_PGP_S2K)
    if(req.algo_name() == "OpenPGP-S2K" && req.arg_count() == 1)
       {
       if(auto hash = HashFunction::create(req.arg(0)))
          {
-         return std::unique_ptr<PasswordHashFamily>(new RFC4880_S2K(hash.release()));
+         return std::unique_ptr<PasswordHashFamily>(new RFC4880_S2K_Family(hash.release()));
          }
       }
 #endif

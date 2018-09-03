@@ -57,7 +57,7 @@ class BOTAN_PUBLIC_API(2,8) PBKDF2 final : public PasswordHash
    };
 
 /**
-* PKCS #5 PBKDF2
+* Family of PKCS #5 PBKDF2 operations
 */
 class BOTAN_PUBLIC_API(2,8) PBKDF2_Family final : public PasswordHashFamily
    {

@@ -149,10 +149,10 @@ Scrypt::Scrypt(std::chrono::milliseconds msec)
          break;
          }
 
-      if(range > 32)
+      if(range > 64)
          {
          m_p *= 8;
-         est_nsec *= 6;
+         est_nsec *= 7;
          }
 
       if(range > 8)

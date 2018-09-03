@@ -16,12 +16,12 @@ namespace Botan {
 namespace {
 
 void pbkdf2_set_key(MessageAuthenticationCode& prf,
-                    const char* passphrase,
-                    size_t passphrase_len)
+                    const char* password,
+                    size_t password_len)
    {
    try
       {
-      prf.set_key(cast_char_ptr_to_uint8(passphrase), passphrase_len);
+      prf.set_key(cast_char_ptr_to_uint8(password), password_len);
       }
    catch(Invalid_Key_Length&)
       {
@@ -35,7 +35,7 @@ size_t
 pbkdf2(MessageAuthenticationCode& prf,
        uint8_t out[],
        size_t out_len,
-       const std::string& passphrase,
+       const std::string& password,
        const uint8_t salt[], size_t salt_len,
        size_t iterations,
        std::chrono::milliseconds msec)
@@ -48,7 +48,7 @@ pbkdf2(MessageAuthenticationCode& prf,
    PBKDF2 pbkdf2(prf, iterations);
 
    pbkdf2.derive_key(out, out_len,
-                     passphrase.c_str(), passphrase.size(),
+                     password.c_str(), password.size(),
                      salt, salt_len);
 
    return iterations;
@@ -142,7 +142,7 @@ void pbkdf2(MessageAuthenticationCode& prf,
 // PBKDF interface
 size_t
 PKCS5_PBKDF2::pbkdf(uint8_t key[], size_t key_len,
-                    const std::string& passphrase,
+                    const std::string& password,
                     const uint8_t salt[], size_t salt_len,
                     size_t iterations,
                     std::chrono::milliseconds msec) const
@@ -155,7 +155,7 @@ PKCS5_PBKDF2::pbkdf(uint8_t key[], size_t key_len,
    PBKDF2 pbkdf2(*m_mac, iterations);
 
    pbkdf2.derive_key(key, key_len,
-                     passphrase.c_str(), passphrase.size(),
+                     password.c_str(), password.size(),
                      salt, salt_len);
 
    return iterations;
