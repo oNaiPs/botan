@@ -16,7 +16,9 @@
 
 namespace Botan {
 
+class Cipher_Mode;
 class HashFunction;
+enum Cipher_Dir : int;
 
 class BOTAN_PUBLIC_API(2,0) CommonCrypto_Error final : public Exception
   {
@@ -24,6 +26,11 @@ class BOTAN_PUBLIC_API(2,0) CommonCrypto_Error final : public Exception
       CommonCrypto_Error(const std::string& what) :
         Exception(what + " failed.") {}
   };
+
+/* Cipher Modes */
+
+Cipher_Mode*
+make_commoncrypto_cipher_mode(const std::string& name, Cipher_Dir direction);
 
 /* Hash */
 
