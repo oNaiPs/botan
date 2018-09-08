@@ -1,0 +1,138 @@
+/*
+* Cipher Modes via CommonCrypto
+* (C) 2018 Jose Pereira
+*
+* Botan is released under the Simplified BSD License (see license.txt)
+*/
+
+#include <botan/cipher_mode.h>
+#include <botan/parsing.h>
+#include <botan/internal/commoncrypto.h>
+#include <botan/internal/rounding.h>
+#include <botan/scan_name.h>
+
+#include "commoncrypto_utils.h"
+
+namespace Botan {
+
+std::string CommonCrypto_Error::ccryptorstatus_to_string(CCCryptorStatus status)
+   {
+   switch(status)
+      {
+      case kCCSuccess:
+         return "Success";
+      case kCCParamError:
+         return "ParamError";
+      case kCCBufferTooSmall:
+         return "BufferTooSmall";
+      case kCCMemoryFailure:
+         return "MemoryFailure";
+      case kCCAlignmentError:
+         return "AlignmentError";
+      case kCCDecodeError:
+         return "DecodeError";
+      case kCCUnimplemented:
+         return "Unimplemented";
+      case kCCOverflow:
+         return "Overflow";
+      case kCCRNGFailure:
+         return "RNGFailure";
+      case kCCUnspecifiedError:
+         return "UnspecifiedError";
+      case kCCCallSequenceError:
+         return "CallSequenceError";
+      case kCCKeySizeError:
+         return "KeySizeError";
+      default:
+         return "Unknown";
+      }
+   };
+
+
+CommonCryptor_Opts commoncrypto_opts_from_algo(const std::string& algo)
+   {
+   SCAN_Name spec(algo);
+
+   std::string algo_name = spec.algo_name();
+   std::string cipher_mode = spec.cipher_mode();
+   std::string cipher_mode_padding = spec.cipher_mode_pad();
+
+   CommonCryptor_Opts opts;
+
+   if(algo_name.compare(0, 3, "AES") == 0)
+      {
+      opts.algo = kCCAlgorithmAES;
+      opts.block_size = kCCBlockSizeAES128;
+      if(algo_name == "AES-128")
+         {
+         opts.key_spec = Key_Length_Specification(kCCKeySizeAES128);
+         }
+      else if(algo_name == "AES-192")
+         {
+         opts.key_spec = Key_Length_Specification(kCCKeySizeAES192);
+         }
+      else if(algo_name == "AES-256")
+         {
+         opts.key_spec = Key_Length_Specification(kCCKeySizeAES256);
+         }
+      else
+         {
+         throw CommonCrypto_Error("Unknown AES algorithm");
+         }
+      }
+   else if(algo_name == "DES")
+      {
+      opts.algo = kCCAlgorithmDES;
+      opts.block_size = kCCBlockSizeDES;
+      opts.key_spec = Key_Length_Specification(kCCKeySizeDES);
+      }
+   else
+      {
+      throw CommonCrypto_Error("Unsupported cipher");
+      }
+
+   if(cipher_mode == "ECB")
+      {
+      opts.mode = kCCModeECB;
+      }
+   else if(cipher_mode == "CBC")
+      {
+      opts.mode = kCCModeCBC;
+      }
+   else if(cipher_mode == "CFB")
+      {
+      opts.mode = kCCModeCFB;
+      }
+   else if(cipher_mode == "CTR")
+      {
+      opts.mode = kCCModeCTR;
+      }
+   else if(cipher_mode == "OFB")
+      {
+      opts.mode = kCCModeOFB;
+      }
+   else if(cipher_mode == "XTS")
+      {
+      opts.mode = kCCModeXTS;
+      }
+   else
+      {
+      throw CommonCrypto_Error("Unsupported cipher mode!");
+      }
+
+   if(cipher_mode_padding.empty() || cipher_mode_padding == "PKCS7")
+      {
+      opts.padding = ccPKCS7Padding;
+      }
+   else if(cipher_mode_padding == "NoPadding")
+      {
+      opts.padding = ccNoPadding;
+      }
+   else
+      {
+      throw CommonCrypto_Error("Unsupported cipher mode padding!");
+      }
+
+   return opts;
+   }
+}
