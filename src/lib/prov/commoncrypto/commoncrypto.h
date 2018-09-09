@@ -17,6 +17,7 @@
 namespace Botan {
 
 class Cipher_Mode;
+class BlockCipher;
 class HashFunction;
 enum Cipher_Dir : int;
 typedef int32_t CCCryptorStatus;
@@ -38,9 +39,15 @@ class BOTAN_PUBLIC_API(2, 0) CommonCrypto_Error final : public Exception
 Cipher_Mode*
 make_commoncrypto_cipher_mode(const std::string& name, Cipher_Dir direction);
 
+/* Block Ciphers */
+
+std::unique_ptr<BlockCipher>
+make_commoncrypto_block_cipher(const std::string& name);
+
 /* Hash */
 
-std::unique_ptr<HashFunction> make_commoncrypto_hash(const std::string& name);
+std::unique_ptr<HashFunction>
+make_commoncrypto_hash(const std::string& name);
 
 }
 

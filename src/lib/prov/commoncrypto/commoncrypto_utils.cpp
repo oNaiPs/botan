@@ -109,7 +109,7 @@ CommonCryptor_Opts commoncrypto_opts_from_algo(const std::string& algo)
       throw CommonCrypto_Error("Unsupported cipher");
       }
 
-   if(cipher_mode == "ECB")
+   if(cipher_mode.empty() || cipher_mode == "ECB")
       {
       opts.mode = kCCModeECB;
       }
