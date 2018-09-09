@@ -86,6 +86,24 @@ CommonCryptor_Opts commoncrypto_opts_from_algo(const std::string& algo)
       opts.block_size = kCCBlockSizeDES;
       opts.key_spec = Key_Length_Specification(kCCKeySizeDES);
       }
+   else if(algo_name == "TripleDES")
+      {
+      opts.algo = kCCAlgorithm3DES;
+      opts.block_size = kCCBlockSize3DES;
+      opts.key_spec = Key_Length_Specification(kCCKeySize3DES);//, 16, 24, 8);
+      }
+   else if(algo_name == "Blowfish")
+      {
+      opts.algo = kCCAlgorithmBlowfish;
+      opts.block_size = kCCBlockSizeBlowfish;
+      opts.key_spec = Key_Length_Specification(kCCKeySizeMinBlowfish, kCCKeySizeMaxBlowfish);//, 1, 56, 1);
+      }
+   else if(algo_name == "CAST-128")
+      {
+      opts.algo = kCCAlgorithmCAST;
+      opts.block_size = kCCBlockSizeCAST;
+      opts.key_spec = Key_Length_Specification(kCCKeySizeMinCAST, kCCKeySizeMaxCAST);//, 1, 16, 1);
+      }
    else
       {
       throw CommonCrypto_Error("Unsupported cipher");
